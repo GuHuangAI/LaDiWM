@@ -33,7 +33,7 @@ PYTHONPATH=$(pwd) python ./scripts/eval_libero_policy_action.py --exp-dir $Your 
 ```
 
 ### Weights
-The weights contain DINO, Siglip, world model and policy model.
+The weights contain DINO, Siglip, world model and policy model.<br>
 BaiduDisk: https://pan.baidu.com/s/1jXTi52U_GODJp9euAr8RDA?pwd=fu2j password: fu2j <br>
 GoogleDrive: https://drive.google.com/file/d/1E3X_RfdZISwOW2l5SWuMUSiJmRnX-0Dg/view?usp=drive_link 
 

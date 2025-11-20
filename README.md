@@ -10,7 +10,7 @@ conda env create -f environment.yml
 conda activate ladiwm
 ```
 **Note**: We use the siglip model in the `transformers` package, however, the default `get_image_features` function of siglip model only return pooled tokens instead of patch tokens.
-Therefore, we modify the source code (~/anaconda3/envs/ladiwm/lib/python3.8/site-packages/transformers/models/siglip/modeling_siglip.py), letting the `get_image_features` function to directly return `vision_outputs` instead of `pooled_output`.
+Therefore, we modify the source code (~/anaconda3/envs/ladiwm/lib/python3.8/site-packages/transformers/models/siglip/modeling_siglip.py), letting the `get_image_features` function to directly return `vision_outputs` instead of `pooled_output`. (similar modification to the `get_text_features` function)
 
 ### Data Preparation
 1. Download [LIBERO](https://libero-project.github.io/datasets) dataset, note that we train the world model with LIBERO-90, and policy model with LIBERO-LONG (LIBERO-10).

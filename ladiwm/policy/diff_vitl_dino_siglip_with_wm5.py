@@ -80,194 +80,6 @@ class SinusoidalPosEmb(nn.Module):
         emb = self.mlp(emb)
         return emb
 
-# def axis_angle_to_rotation_matrix(axis_angle):
-#     theta = torch.norm(axis_angle, dim=1, keepdim=True)  # 旋转角度
-#     k = axis_angle / (theta + 1e-8)  # 单位化旋转轴
-#
-#     # 构造反对称矩阵 K
-#     K = torch.zeros(axis_angle.size(0), 3, 3, device=axis_angle.device)
-#     K[:, 0, 1] = -k[:, 2]
-#     K[:, 0, 2] = k[:, 1]
-#     K[:, 1, 0] = k[:, 2]
-#     K[:, 1, 2] = -k[:, 0]
-#     K[:, 2, 0] = -k[:, 1]
-#     K[:, 2, 1] = k[:, 0]
-#
-#     I = torch.eye(3, device=axis_angle.device).unsqueeze(0)
-#     R = I + torch.sin(theta).unsqueeze(-1) * K + (1 - torch.cos(theta).unsqueeze(-1)) * torch.bmm(K, K)
-#     return R
-
-
-# def quaternion_to_matrix(quaternions):
-#     """
-#     Convert rotations given as quaternions to rotation matrices.
-#
-#     Args:
-#         quaternions: quaternions with real part first,
-#             as tensor of shape (..., 4).
-#
-#     Returns:
-#         Rotation matrices as tensor of shape (..., 3, 3).
-#     """
-#     r, i, j, k = torch.unbind(quaternions, -1)
-#     two_s = 2.0 / (quaternions * quaternions).sum(-1)
-#
-#     o = torch.stack(
-#         (
-#             1 - two_s * (j * j + k * k),
-#             two_s * (i * j - k * r),
-#             two_s * (i * k + j * r),
-#             two_s * (i * j + k * r),
-#             1 - two_s * (i * i + k * k),
-#             two_s * (j * k - i * r),
-#             two_s * (i * k - j * r),
-#             two_s * (j * k + i * r),
-#             1 - two_s * (i * i + j * j),
-#         ),
-#         -1,
-#     )
-#     return o.reshape(quaternions.shape[:-1] + (3, 3))
-
-
-# def axis_angle_to_quaternion(axis_angle):
-#     """
-#     Convert rotations given as axis/angle to quaternions.
-#
-#     Args:
-#         axis_angle: Rotations given as a vector in axis angle form,
-#             as a tensor of shape (..., 3), where the magnitude is
-#             the angle turned anticlockwise in radians around the
-#             vector's direction.
-#
-#     Returns:
-#         quaternions with real part first, as tensor of shape (..., 4).
-#     """
-#     angles = torch.norm(axis_angle, p=2, dim=-1, keepdim=True)
-#     half_angles = 0.5 * angles
-#     eps = 1e-6
-#     small_angles = angles.abs() < eps
-#     sin_half_angles_over_angles = torch.empty_like(angles)
-#     sin_half_angles_over_angles[~small_angles] = (
-#             torch.sin(half_angles[~small_angles]) / angles[~small_angles]
-#     )
-#     # for x small, sin(x/2) is about x/2 - (x/2)^3/6
-#     # so sin(x/2)/x is about 1/2 - (x*x)/48
-#     sin_half_angles_over_angles[small_angles] = (
-#             0.5 - (angles[small_angles] * angles[small_angles]) / 48
-#     )
-#     quaternions = torch.cat(
-#         [torch.cos(half_angles), axis_angle * sin_half_angles_over_angles], dim=-1
-#     )
-#     return quaternions
-#
-#
-# def _sqrt_positive_part(x: torch.Tensor) -> torch.Tensor:
-#     """
-#     Returns torch.sqrt(torch.max(0, x))
-#     but with a zero subgradient where x is 0.
-#     """
-#     ret = torch.zeros_like(x)
-#     positive_mask = x > 0
-#     ret[positive_mask] = torch.sqrt(x[positive_mask])
-#     return ret
-#
-#
-# def matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
-#     """
-#     Convert rotations given as rotation matrices to quaternions.
-#
-#     Args:
-#         matrix: Rotation matrices as tensor of shape (..., 3, 3).
-#
-#     Returns:
-#         quaternions with real part first, as tensor of shape (..., 4).
-#     """
-#     if matrix.size(-1) != 3 or matrix.size(-2) != 3:
-#         raise ValueError(f"Invalid rotation matrix  shape f{matrix.shape}.")
-#
-#     batch_dim = matrix.shape[:-2]
-#     m00, m01, m02, m10, m11, m12, m20, m21, m22 = torch.unbind(
-#         matrix.reshape(*batch_dim, 9), dim=-1
-#     )
-#
-#     q_abs = _sqrt_positive_part(
-#         torch.stack(
-#             [
-#                 1.0 + m00 + m11 + m22,
-#                 1.0 + m00 - m11 - m22,
-#                 1.0 - m00 + m11 - m22,
-#                 1.0 - m00 - m11 + m22,
-#             ],
-#             dim=-1,
-#         )
-#     )
-#
-#     # we produce the desired quaternion multiplied by each of r, i, j, k
-#     quat_by_rijk = torch.stack(
-#         [
-#             torch.stack([q_abs[..., 0] ** 2, m21 - m12, m02 - m20, m10 - m01], dim=-1),
-#             torch.stack([m21 - m12, q_abs[..., 1] ** 2, m10 + m01, m02 + m20], dim=-1),
-#             torch.stack([m02 - m20, m10 + m01, q_abs[..., 2] ** 2, m12 + m21], dim=-1),
-#             torch.stack([m10 - m01, m20 + m02, m21 + m12, q_abs[..., 3] ** 2], dim=-1),
-#         ],
-#         dim=-2,
-#     )
-#
-#     # We floor here at 0.1 but the exact level is not important; if q_abs is small,
-#     # the candidate won't be picked.
-#     # pyre-ignore [16]: `torch.Tensor` has no attribute `new_tensor`.
-#     quat_candidates = quat_by_rijk / (2.0 * q_abs[..., None].max(q_abs.new_tensor(0.1)))
-#
-#     # if not for numerical problems, quat_candidates[i] should be same (up to a sign),
-#     # forall i; we pick the best-conditioned one (with the largest denominator)
-#
-#     return quat_candidates[
-#            F.one_hot(q_abs.argmax(dim=-1), num_classes=4) > 0.5, :  # pyre-ignore[16]
-#            ].reshape(*batch_dim, 4)
-#
-#
-# def quaternion_to_axis_angle(quaternions):
-#     """
-#     Convert rotations given as quaternions to axis/angle.
-#
-#     Args:
-#         quaternions: quaternions with real part first,
-#             as tensor of shape (..., 4).
-#
-#     Returns:
-#         Rotations given as a vector in axis angle form, as a tensor
-#             of shape (..., 3), where the magnitude is the angle
-#             turned anticlockwise in radians around the vector's
-#             direction.
-#     """
-#     norms = torch.norm(quaternions[..., 1:], p=2, dim=-1, keepdim=True)
-#     half_angles = torch.atan2(norms, quaternions[..., :1])
-#     angles = 2 * half_angles
-#     eps = 1e-6
-#     small_angles = angles.abs() < eps
-#     sin_half_angles_over_angles = torch.empty_like(angles)
-#     sin_half_angles_over_angles[~small_angles] = (
-#             torch.sin(half_angles[~small_angles]) / angles[~small_angles]
-#     )
-#     # for x small, sin(x/2) is about x/2 - (x/2)^3/6
-#     # so sin(x/2)/x is about 1/2 - (x*x)/48
-#     sin_half_angles_over_angles[small_angles] = (
-#             0.5 - (angles[small_angles] * angles[small_angles]) / 48
-#     )
-#     return quaternions[..., 1:] / sin_half_angles_over_angles
-#
-#
-# def rotation_matrix_to_axis_angle(rot_matrices):
-#     """
-#     将旋转矩阵转换为轴角表示。
-#
-#     参数:
-#     rot_matrices: 形状为 (N, 3, 3) 的张量，表示 N 个旋转矩阵
-#
-#     返回:
-#     axis_angles: 形状为 (N, 3) 的张量，表示 N 个轴角对应的 (轴, 角度)
-#     """
-#     return quaternion_to_axis_angle(matrix_to_quaternion(rot_matrices))
 
 class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
     """
@@ -330,12 +142,6 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
         self.sampling_step = sampling_step
         # time embedding
         self.time_embed = SinusoidalPosEmb(self.temporal_embed_size)
-        # self.dino = vit_base(patch_size=14, num_register_tokens=0,
-        #                      img_size=526,
-        #                      init_values=1.0,
-        #                      block_chunks=0,
-        #                      pre_weight='/data1/huang/pre_weight/dinov2_vitb14_pretrain.pth')
-
         self.dino = vit_base(patch_size=14, num_register_tokens=0,
                              img_size=526,
                              init_values=1.0,
@@ -424,27 +230,14 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
         self.num_track_ts = 16
         self.policy_track_patch_size = 4 if policy_track_patch_size is None else policy_track_patch_size
 
-
-        # self.track_proj_encoder = TrackPatchEmbed(
-        #     num_track_ts=self.policy_num_track_ts,
-        #     num_track_ids=self.num_track_ids,
-        #     patch_size=self.policy_track_patch_size,
-        #     in_dim=2 + self.num_views,  # X, Y, one-hot view embedding
-        #     embed_dim=self.spatial_embed_size)
-
         self.track_id_embed_dim = 16
-        # self.num_track_patches_per_view = self.track_proj_encoder.num_patches_per_track
-        # self.num_track_patches = self.num_track_patches_per_view * self.num_views
+
 
     def _setup_spatial_positional_embeddings(self):
         # setup positional embeddings
         spatial_token = nn.Parameter(torch.randn(1, 1, self.spatial_embed_size))  # SPATIAL_TOKEN
         img_patch_pos_embed = nn.Parameter(torch.randn(1, self.img_num_patches, self.spatial_embed_size))
-        # self.spatial_cls_token = nn.Parameter(torch.randn(1, self.image_frame, self.spatial_embed_size))
-        # track_patch_pos_embed = nn.Parameter(torch.randn(1, self.num_track_patches, self.spatial_embed_size-self.track_id_embed_dim))
-        # modality_embed = nn.Parameter(
-        #     torch.randn(1, len(self.image_encoders) + self.num_views + 1, self.spatial_embed_size)
-        # )  # IMG_PATCH_TOKENS + TRACK_PATCH_TOKENS + SENTENCE_TOKEN
+
         modality_embed = nn.Parameter(
             torch.randn(1, len(self.image_encoders) + 1, self.spatial_embed_size)
         )  # IMG_PATCH_TOKENS + SENTENCE_TOKEN
@@ -454,14 +247,6 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
         # self.register_parameter("track_patch_pos_embed", track_patch_pos_embed)
         self.register_parameter("modality_embed", modality_embed)
 
-        # for selecting modality embed
-        # modality_idx = []
-        # for i, encoder in enumerate(self.image_encoders):
-        #     modality_idx += [i] * encoder.num_patches
-        # # for i in range(self.num_views):
-        # #     modality_idx += [modality_idx[-1] + 1] * self.num_track_ids * self.num_track_patches_per_view  # for track embedding
-        # modality_idx += [modality_idx[-1] + 1]  # for sentence embedding
-        # self.modality_idx = torch.LongTensor(modality_idx)
 
     def _setup_extra_state_encoder(self, **extra_state_encoder_cfg):
         if len(self.extra_state_keys) == 0:
@@ -485,13 +270,6 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
             mlp_hidden_size=mlp_hidden_size,
             dropout=dropout,
         )
-        # self.time_img_transformer = TransformerDecoder(
-        #     input_size=self.spatial_embed_size,
-        #     num_layers=num_layers,
-        #     num_heads=num_heads,
-        #     head_output_size=head_output_size,
-        #     mlp_hidden_size=mlp_hidden_size,
-        #     dropout=dropout, )
 
         if spatial_downsample:
             self.temporal_embed_size = spatial_downsample_embed_size
@@ -651,12 +429,6 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
             # obs_lat = obs_lat.reshape(b, t, obs_lat.shape[-2], obs_lat.shape[-1])
             # obs_lat = rearrange(obs_lat, '(b t) n c -> b (t n) c', b=b, t=t)
             img_encoded.append(self.image_encoders[view_idx](obs_lat)  # b t n c
-                               # rearrange(
-                               #     TensorUtils.time_distributed(
-                               #         obs[:, view_idx, ...], self.image_encoders[view_idx]
-                               #     ),
-                               #     "b t c h w -> b t (h w) c",
-                               # )
                                )  # (b, t, num_patches, c)
 
         img_encoded = torch.cat(img_encoded, -2)  # (b, t, 2*num_patches, c)
@@ -675,20 +447,6 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
         """
 
         B, T = img_encoded.shape[:2]
-
-        # 2. encode task_emb
-        # text_encoded = self.language_encoder_spatial(task_emb)  # (b, c)
-        # text_encoded = text_encoded.view(B, 1, -1)  # (b, 1, c)
-
-        # 3. encode track
-        # track_encoded, _recon_track = self.track_encode(track_obs, task_emb)  # track_encoded: ((b t n), 2*patch_num, c)  _recon_track: (b, v, track_len, n, 2)
-        # # patch position embedding
-        # tr_feat, tr_id_emb = track_encoded[:, :, :-self.track_id_embed_dim], track_encoded[:, :, -self.track_id_embed_dim:]
-        # tr_feat += self.track_patch_pos_embed  # ((b t n), 2*patch_num, c)
-        # # track id embedding
-        # tr_id_emb[:, 1:, -self.track_id_embed_dim:] = tr_id_emb[:, :1, -self.track_id_embed_dim:]  # guarantee the permutation invariance
-        # track_encoded = torch.cat([tr_feat, tr_id_emb], dim=-1)
-        # track_encoded = rearrange(track_encoded, "(b t n) pn d -> b t (n pn) d", b=B, t=T)  # (b, t, 2*num_track*num_track_patch, c)
 
         # 3. concat img + track + text embs then add modality embeddings
         if self.spatial_transformer_use_text:
@@ -712,20 +470,10 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
         out = self.spatial_downsample(out).reshape(B, T, 1, -1)
         action_cls_token = self.action_cls_token.unsqueeze(0).expand(B, T, -1, -1)  # (b, t, 1, c')
         out_seq = [action_cls_token, out]
-        # out = rearrange(out, '(b t) n c -> (b n) t c', b=B)
-        # out = torch.cat((self.spatial_token.repeat(out.shape[0], 1, 1), out), dim=1)
-        # out = self.time_img_transformer(out)[:, 0]
-        # out = rearrange(out, '(b n) c -> b n c', b=B)
-        # 6. encode extra states
-        # for k in extra_states.keys():
-        #     print(extra_states[k].shape)
         if self.extra_encoder is None:
             extra = None
         else:
             extra = self.extra_encoder(extra_states)  # (B, T, num_extra, c')
-            # extra = extra.view(B, -1, extra.shape[-1])
-            # extra = torch.cat([extra, extra[:, -1:].repeat(1, T-extra.shape[1], 1, 1)], dim=1)
-            # extra = extra.expand(B, T, extra.shape[-2], extra.shape[-1])
 
         # 7. encode language, treat it as action token
         text_encoded_ = self.tokenizer(task_emb, padding="max_length", return_tensors="pt")['input_ids'].to(
@@ -734,22 +482,14 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
             text_encoded_ = self.siglip.get_text_features(text_encoded_)[1]
         text_encoded_ = self.language_encoder_temporal(text_encoded_)  # (b, c')
         text_encoded_ = text_encoded_.view(B, 1, 1, action_cls_token.shape[-1])  # (b, 1, c')
-        # action_cls_token = self.action_cls_token.unsqueeze(0).expand(B, T, -1, -1)  # (b, t, 1, c')
-        # if self.temporal_transformer_use_text:
-        #     out_seq = [out, text_encoded_]
-        # else:
-        #     out_seq = [out]
 
         if self.extra_encoder is not None:
             out_seq.append(extra)
-        # for _ in out_seq:
-        #     print(_.shape)
-        # out_seq.append(text_encoded_)
+
         time_emb = self.time_embed(time.expand(B)).unsqueeze(1).unsqueeze(1)  # b 1 1 c'
         time_emb = time_emb + text_encoded_
         out_seq.append(time_emb.repeat(1, T, 1, 1))
-        # for tmp in out_seq:
-        #     print(tmp.shape)
+
         output = torch.cat(out_seq, -2)  # (b, t, 2 or 3 + num_extra, c')
 
         if return_recon:
@@ -784,12 +524,6 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
             # obs_lat = obs_lat.reshape(b, t, obs_lat.shape[-2], obs_lat.shape[-1])
             # obs_lat = rearrange(obs_lat, '(b t) n c -> b (t n) c', b=b, t=t)
             img_encoded.append(self.image_encoders[view_idx](obs_lat)  # b t n c
-                               # rearrange(
-                               #     TensorUtils.time_distributed(
-                               #         obs[:, view_idx, ...], self.image_encoders[view_idx]
-                               #     ),
-                               #     "b t c h w -> b t (h w) c",
-                               # )
                                )  # (b, t, num_patches, c)
 
         img_encoded = torch.cat(img_encoded, -2)  # (b, t, 2*num_patches, c)
@@ -906,16 +640,6 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
         # 2. encode task_emb
         text_encoded = self.language_encoder_spatial(task_emb)  # (b, c)
         text_encoded = text_encoded.view(B, 1, 1, -1).expand(-1, T, -1, -1)  # (b, t, 1, c)
-
-        # 3. encode track
-        # track_encoded, _recon_track = self.track_encode(track_obs, task_emb)  # track_encoded: ((b t n), 2*patch_num, c)  _recon_track: (b, v, track_len, n, 2)
-        # # patch position embedding
-        # tr_feat, tr_id_emb = track_encoded[:, :, :-self.track_id_embed_dim], track_encoded[:, :, -self.track_id_embed_dim:]
-        # tr_feat += self.track_patch_pos_embed  # ((b t n), 2*patch_num, c)
-        # # track id embedding
-        # tr_id_emb[:, 1:, -self.track_id_embed_dim:] = tr_id_emb[:, :1, -self.track_id_embed_dim:]  # guarantee the permutation invariance
-        # track_encoded = torch.cat([tr_feat, tr_id_emb], dim=-1)
-        # track_encoded = rearrange(track_encoded, "(b t n) pn d -> b t (n pn) d", b=B, t=T)  # (b, t, 2*num_track*num_track_patch, c)
 
         # 3. concat img + track + text embs then add modality embeddings
         if self.spatial_transformer_use_text:
@@ -1151,18 +875,6 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
             return C_pred, noise_pred
 
     def forward_sample(self, x_cur, t_cur, obs, task_emb, extra_states, wm_act, use_action):
-        # b = obs.shape[0]
-        # obs_view1 = obs[:, 0]
-        # obs_view2 = obs[:, 1]
-        # with torch.no_grad():
-        #     cond1 = [obs_view1[:, -1], task_emb]
-        #     pred_view1 = self.track.sample(batch_size=b, cond=cond1)  # b, t, c, h, w
-        #     cond2 = [obs_view2[:, -1], task_emb]
-        #     pred_view2 = self.track.sample(batch_size=b, cond=cond2)
-        # obs_view1 = torch.cat([obs_view1, pred_view1], dim=1)
-        # obs_view2 = torch.cat([obs_view2, pred_view2], dim=1)
-        # obs = torch.stack([obs_view1, obs_view2], dim=1)  # b v t c h w
-        # obs = obs[:, :, -10:]
         x = self.spatial_encode2(wm_act, t_cur, obs, task_emb, extra_states, use_action,
                                  return_recon=False)  # x: (b, t, 2+num_extra, c), recon_track: (b, v, t, tl, n, 2)
         x = self.temporal_encode(x)  # (b, t, c)
@@ -1248,11 +960,6 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
             "bc_loss": loss.sum().item(),
         }
 
-        # if not self.policy_head.deterministic:
-        #     # pseudo loss
-        #     sampled_action = dist.sample().detach()
-        #     mse_loss = F.mse_loss(sampled_action, action)
-        #     ret_dict["pseudo_sampled_action_mse_loss"] = mse_loss.sum().item()
 
         ret_dict["loss"] = ret_dict["bc_loss"]
         return loss.sum(), ret_dict
@@ -1359,8 +1066,6 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
             self.ee_pos_queue.append(extra_states['ee_pos'].clone())
         if 'ee_states' in self.extra_state_keys:
             self.ee_state_queue.append(extra_states['ee_states'].clone())
-        # track_obs = torch.cat(list(self.track_obs_queue), dim=2)  # b v fs c h w
-        # track_obs = rearrange(track_obs, "b v fs c h w -> b v 1 fs c h w")
         track_obs = None
         extra_states_dict = {}
         if 'joint_states' in self.extra_state_keys:
@@ -1371,44 +1076,18 @@ class BCViLTPolicyDiff_DINO_SIGLIP_WM5(nn.Module):
             extra_states_dict.update({'ee_pos': torch.cat(list(self.ee_pos_queue), dim=1)})
         if 'ee_states' in self.extra_state_keys:
             extra_states_dict.update({'ee_states': torch.cat(list(self.ee_state_queue), dim=1)})
-        # extra_states = {
-        #     'joint_states': torch.cat(list(self.joint_state_queue), dim=1),
-        #     'gripper_states': torch.cat(list(self.gripper_state_queue), dim=1),
-        # }
 
         obs = torch.cat(list(self.track_obs_queue), dim=2)  # b v t c h w
         obs = self._preprocess_rgb(obs)
         b = obs.shape[0]
-        # obs_view1 = obs[:, 0]
-        # obs_view2 = obs[:, 1]
-        # with torch.no_grad():
-        #     cond1 = [obs_view1[:, -1], task_emb]
-        #     pred_view1 = self.track.sample(batch_size=b, cond=cond1)  # b, t, c, h, w
-        #     cond2 = [obs_view2[:, -1], task_emb]
-        #     pred_view2 = self.track.sample(batch_size=b, cond=cond2)
-        # obs_view1 = torch.cat([obs_view1, pred_view1], dim=1)  # b t c h w
-        # obs_view2 = torch.cat([obs_view2, pred_view2], dim=1)  # b t c h w
-        # obs = torch.stack([obs_view1, obs_view2], dim=1)  # b v t c h w
-        # pred_view = torch.stack([pred_view1, pred_view2], dim=1)  # b v t c h w
-        # obs = F.interpolate(obs.flatten(1, 3), size=(126, 126), mode="bilinear")
-        # obs = rearrange(obs, 'b (v t c) h w -> b v t c h w', v=2, c=3)
-        # obs = obs[:, :, -10:]
         with torch.no_grad():
             action = self.sample_act(obs, task_emb=task_emb, extra_states=extra_states_dict, wm_act=wm_act, use_action=use_action)
-            # x = self.spatial_encode(obs, track_obs, task_emb=task_emb, extra_states=extra_states, return_recon=False)  # x: (b, 1, 4, c), recon_track: (b, v, 1, tl, n, 2)
-            # self.latent_queue.append(x)
-            # x = torch.cat(list(self.latent_queue), dim=1)  # (b, t, 4, c)
-            # x = self.temporal_encode(x)  # (b, t, c)
-            # x = x.flatten(1, 2)  # b t*c
-            # feat = torch.cat([x[:, -1], rearrange(rec_tracks[:, :, -1, :, :, :], "b v tl n d -> b (v tl n d)")], dim=-1)
-            # action = self.policy_head(x)  # only use the current timestep feature to predict action
             action = action.detach().cpu()  # (b, act_dim)
 
         action = action.reshape(-1, *self.act_shape)
         action = torch.clamp(action, -1, 1)
         action_np = action.float().cpu().numpy()[:, 0]
         return action_np, obs, action
-        # return action.float().cpu().numpy(), (None, pred_view)  # (b, *act_shape)
 
     def reset(self):
         self.latent_queue.clear()
